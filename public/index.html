@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="format-detection" content="telephone=no">
+  <title>Гомоку</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Главный экран -->
+    <section id="home" class="screen">
+      <header class="hero">
+        <img class="logo" src="icon.svg" alt="">
+        <div>
+          <h1>Гомоку</h1>
+          <p class="hint">Пять в ряд для двоих</p>
+        </div>
+      </header>
+
+      <button id="btn-new" class="btn primary big">Новая партия</button>
+
+      <h2 class="section-title">Мои партии</h2>
+      <div id="games" class="list"></div>
+
+      <details class="rules">
+        <summary>Правила</summary>
+        <ul>
+          <li>Доска 15×15, чёрные ходят первыми.</li>
+          <li>Игроки по очереди ставят камни на пересечения линий.</li>
+          <li>Побеждает тот, кто первым выстроит <b>5 камней в ряд</b> по горизонтали, вертикали или диагонали.</li>
+          <li>В режиме «Ровно 5» ряд из 6 и более камней не считается.</li>
+          <li>Ход ставится в два касания: выбери точку, затем нажми её ещё раз или «Поставить».</li>
+          <li>Можно попросить соперника вернуть ход. Если соперника нет в игре, бот пришлёт ему уведомление.</li>
+        </ul>
+      </details>
+    </section>
+
+    <!-- Экран партии -->
+    <section id="game" class="screen hidden">
+      <div class="topbar">
+        <button id="btn-back" class="link-btn">‹ Партии</button>
+        <span id="conn" class="conn"></span>
+      </div>
+
+      <div class="players">
+        <div class="player" id="p0">
+          <span class="stone black"></span>
+          <div class="pinfo"><div class="pname"></div><div class="pmeta"></div></div>
+        </div>
+        <div id="score" class="score">0 : 0</div>
+        <div class="player right" id="p1">
+          <div class="pinfo"><div class="pname"></div><div class="pmeta"></div></div>
+          <span class="stone white"></span>
+        </div>
+      </div>
+
+      <div id="status" class="status"></div>
+      <div id="banner" class="banner hidden"></div>
+
+      <div class="board-wrap">
+        <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div id="waiting" class="overlay hidden">
+          <div class="overlay-card">
+            <div class="overlay-title">Ждём соперника</div>
+            <p class="hint">Отправь приглашение — партия начнётся, как только соперник откроет ссылку.</p>
+            <button class="btn primary big" data-act="share">Пригласить</button>
+            <button class="btn big" data-act="copy">Скопировать ссылку</button>
+            <button class="btn ghost danger big" data-act="cancel">Отменить партию</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="actions" class="actions"></div>
+    </section>
+
+    <!-- Ошибка входа -->
+    <section id="fatal" class="screen hidden">
+      <div class="empty big-empty">
+        <img class="logo" src="icon.svg" alt="">
+        <p id="fatal-text"></p>
+      </div>
+    </section>
+  </div>
+
+  <!-- Создание партии -->
+  <div id="sheet" class="sheet hidden">
+    <div class="sheet-card">
+      <h3>Новая партия</h3>
+      <div class="field">
+        <div class="label">Победа</div>
+        <div class="seg" data-key="rule">
+          <button data-v="free" class="on">5 и больше</button>
+          <button data-v="exact">Ровно 5</button>
+        </div>
+      </div>
+      <div class="field">
+        <div class="label">Первый ход (чёрные)</div>
+        <div class="seg" data-key="first">
+          <button data-v="me" class="on">Я</button>
+          <button data-v="them">Соперник</button>
+          <button data-v="random">Случайно</button>
+        </div>
+      </div>
+      <button id="btn-create" class="btn primary big">Создать</button>
+      <button id="btn-sheet-close" class="btn ghost big">Отмена</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

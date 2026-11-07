@@ -1,0 +1,6 @@
+# Замените game.example.com на свой домен.
+# Caddy сам получит и будет продлевать HTTPS-сертификат.
+game.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:3000
+}

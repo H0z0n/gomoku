@@ -58,10 +58,10 @@ function newId() {
   return id;
 }
 
-function newGame(players, rule, status) {
+function newGame(players, rule, status, turnTime) {
   const now = Date.now();
   const g = {
-    id: newId(), players, rule, moves: [], status,
+    id: newId(), players, rule, turnTime, deadline: null, moves: [], status,
     winner: null, winLine: null, endReason: null, undoRequest: null, nextId: null,
     createdAt: now, updatedAt: now,
   };
@@ -77,6 +77,7 @@ function getGame(id) {
 
 function finish(g, winner, reason, line = null) {
   Object.assign(g, { status: 'finished', winner, endReason: reason, winLine: line, undoRequest: null });
+  stopClock(g);
   if (winner === 0 || winner === 1) {
     const s = (data.scores[pairKey(g)] ||= {});
     const w = g.players[winner];
@@ -86,9 +87,11 @@ function finish(g, winner, reason, line = null) {
 
 function inviteLink(id) {
   if (bot) {
-    return MINIAPP_NAME
-      ? `https://t.me/${bot.username}/${MINIAPP_NAME}?startapp=${id}`
-      : `https://t.me/${bot.username}?startapp=${id}`;
+    // Ссылка сразу в Mini App работает, только если он настроен в @BotFather.
+    // Иначе — ссылка на бота: /start КОД, и бот пришлёт кнопку «Открыть партию».
+    if (MINIAPP_NAME) return `https://t.me/${bot.username}/${MINIAPP_NAME}?startapp=${id}`;
+    if (bot.hasMainApp) return `https://t.me/${bot.username}?startapp=${id}`;
+    return `https://t.me/${bot.username}?start=${id}`;
   }
   return `${WEBAPP_URL}/?room=${id}`;
 }
@@ -98,6 +101,8 @@ function view(g, uid) {
   return {
     id: g.id,
     rule: g.rule,
+    turnTime: g.turnTime || 0,
+    timeLeft: g.deadline ? Math.max(0, g.deadline - Date.now()) : null,
     moves: g.moves,
     status: g.status,
     winner: g.winner,
@@ -123,6 +128,7 @@ function listFor(uid) {
         id: g.id,
         status: g.status,
         rule: g.rule,
+        turnTime: g.turnTime || 0,
         you,
         opponent: opp != null ? nameOf(opp) : null,
         yourTurn: g.status === 'playing' && turnOf(g) === you,
@@ -147,6 +153,51 @@ function prune() {
     for (const gid of Object.keys(u.notify || {})) if (!data.games[gid]) delete u.notify[gid];
   }
   save();
+}
+
+// ───────────────────────── Время на ход ─────────────────────────
+
+const TURN_TIMES = [30, 60, 0]; // секунды; 0 — без ограничения
+const clocks = new Map(); // gameId -> timeout
+
+function stopClock(g) {
+  clearTimeout(clocks.get(g.id));
+  clocks.delete(g.id);
+  g.deadline = null;
+}
+
+function scheduleClock(g) {
+  clearTimeout(clocks.get(g.id));
+  clocks.set(g.id, setTimeout(() => onTimeout(g.id), Math.max(0, g.deadline - Date.now()) + 50));
+}
+
+/**
+ * Запускает отсчёт для того, чья сейчас очередь. Первый ход партии ждёт,
+ * пока в игре окажутся оба соперника, — иначе создатель партии проиграл бы,
+ * пока ещё не увидел уведомление о начале.
+ */
+function startClock(g) {
+  stopClock(g);
+  if (g.status !== 'playing' || !g.turnTime) return;
+  if (!g.moves.length && !g.players.every((p) => inRoom(g.id, p))) return;
+  g.deadline = Date.now() + g.turnTime * 1000;
+  scheduleClock(g);
+}
+
+function onTimeout(id) {
+  clocks.delete(id);
+  const g = data.games[id];
+  if (!g || g.status !== 'playing' || !g.deadline) return;
+  if (Date.now() < g.deadline) { scheduleClock(g); return; }
+  const loser = turnOf(g);
+  finish(g, 1 - loser, 'timeout');
+  touch(g);
+  save();
+  const [l, w] = [g.players[loser], g.players[1 - loser]];
+  notify(w, g.id, `${nameOf(l)} не успевает сделать ход — победа за тобой! 🎉`);
+  notify(l, g.id, 'Время на ход вышло — партия проиграна.');
+  broadcast(g);
+  refreshLists(g);
 }
 
 // ───────────────────────── Комнаты и рассылка ─────────────────────────
@@ -176,7 +227,9 @@ function joinRoom(ws, id) {
     rooms.get(id).add(ws);
     ws.room = id;
   }
-  broadcast(data.games[id]);
+  const g = data.games[id];
+  if (g.status === 'playing' && !g.moves.length && !g.deadline) startClock(g); // оба на месте — пошёл первый ход
+  broadcast(g);
 }
 
 function leaveRoom(ws) {
@@ -225,11 +278,10 @@ const handlers = {
   },
 
   create(ws, m) {
-    const rule = m.rule === 'exact' ? 'exact' : 'free';
-    const seat = m.first === 'them' ? 1 : m.first === 'random' ? crypto.randomInt(2) : 0;
+    const turnTime = TURN_TIMES.includes(m.time) ? m.time : TURN_TIMES[0];
     const players = [null, null];
-    players[seat] = ws.user.id;
-    const g = newGame(players, rule, 'waiting');
+    players[crypto.randomInt(2)] = ws.user.id; // цвет (кто ходит первым) — случайно
+    const g = newGame(players, 'free', 'waiting', turnTime);
     save();
     joinRoom(ws, g.id);
   },
@@ -270,6 +322,7 @@ const handlers = {
     g.moves.push([x, y]);
     g.undoRequest = null;
     touch(g);
+    startClock(g);
     const opp = g.players[1 - me];
     const line = findWin(g.moves, g.rule);
     if (line) {
@@ -301,6 +354,7 @@ const handlers = {
   cancel(ws, m) {
     const g = getGame(m.id);
     if (g.status !== 'waiting' || seatOf(g, ws.user.id) == null) fail('Эту партию уже нельзя отменить');
+    stopClock(g);
     delete data.games[g.id];
     save();
     for (const c of roomClients(g.id)) { c.room = null; send(c, { t: 'deleted', id: g.id }); }
@@ -327,6 +381,7 @@ const handlers = {
     if (m.accept) g.moves.pop();
     g.undoRequest = null;
     touch(g);
+    startClock(g); // и при возврате, и при отказе отвечавший не теряет время на раздумья
     save();
     broadcast(g);
     refreshLists(g);
@@ -339,7 +394,7 @@ const handlers = {
     if (me == null || g.status !== 'finished') fail('Реванш доступен после окончания партии');
     let ng = g.nextId && data.games[g.nextId];
     if (!ng) {
-      ng = newGame([g.players[1], g.players[0]], g.rule, 'playing'); // цвета меняются
+      ng = newGame([g.players[1], g.players[0]], g.rule, 'playing', g.turnTime || 0); // цвета меняются
       g.nextId = ng.id;
       save();
       const opp = g.players[1 - me];
@@ -433,6 +488,9 @@ setInterval(() => {
 
 prune();
 setInterval(prune, 6 * 3600_000).unref();
+
+// Пока сервер был выключен, ходить было нельзя — после запуска даём полное время заново
+for (const g of Object.values(data.games)) if (g.status === 'playing' && g.turnTime) startClock(g);
 
 if (BOT_TOKEN) {
   bot = await startBot({

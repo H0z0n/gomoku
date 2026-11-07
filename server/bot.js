@@ -5,10 +5,11 @@ const RULES = [
   '',
   '• Доска 15×15, чёрные ходят первыми.',
   '• Игроки по очереди ставят камни на пересечения линий.',
-  '• Побеждает тот, кто первым выстроит 5 камней в ряд: по горизонтали, вертикали или диагонали.',
-  '• В режиме «Ровно 5» ряд из 6 и более камней не считается.',
+  '• Побеждает тот, кто первым выстроит 5 и больше камней в ряд: по горизонтали, вертикали или диагонали.',
+  '• Цвет определяется жребием.',
+  '• Если на ход есть ограничение (30 или 60 секунд) и время вышло — партия проиграна.',
   '',
-  'Ход ставится в два касания: выбери точку, потом нажми её ещё раз или «Поставить».',
+  'Чтобы поставить камень, коснись точки дважды или выбери её и нажми «Поставить».',
   'Если соперника нет в игре, я пришлю ему уведомление о твоём ходе.',
 ].join('\n');
 
@@ -33,7 +34,7 @@ export async function startBot({ token, webappUrl, getInviteInfo, onUser }) {
 
   bot.command('start', async (ctx) => {
     onUser(ctx.from);
-    const room = (ctx.match || '').trim();
+    const room = (ctx.match || '').trim().toLowerCase();
     const info = room ? getInviteInfo(room) : null;
     if (info) {
       const text = info.status === 'waiting'
@@ -54,6 +55,13 @@ export async function startBot({ token, webappUrl, getInviteInfo, onUser }) {
 
   bot.on('message', (ctx) => {
     onUser(ctx.from);
+    // Прислали код партии или ссылку-приглашение — даём кнопку прямо в эту партию
+    const text = ctx.message.text || '';
+    const m = text.match(/(?:startapp=|start=|room=)([a-z0-9]+)/i) || text.trim().match(/^([a-z0-9]{4,12})$/i);
+    const room = m && m[1].toLowerCase();
+    if (room && getInviteInfo(room)) {
+      return ctx.reply('Нашёл партию 👇', { reply_markup: openButton('🎮 Открыть партию', room) });
+    }
     return ctx.reply('Нажми кнопку, чтобы открыть игру 👇', { reply_markup: openButton('🎮 Играть') });
   });
 
@@ -81,8 +89,14 @@ export async function startBot({ token, webappUrl, getInviteInfo, onUser }) {
     process.exit(1);
   });
 
+  const hasMainApp = !!bot.botInfo.has_main_web_app;
+  console.log(hasMainApp
+    ? 'Main Mini App включён — приглашения открывают игру сразу.'
+    : 'Main Mini App не включён в @BotFather — приглашения будут вести в чат с ботом (/start КОД).');
+
   return {
     username: bot.botInfo.username,
+    hasMainApp,
     async send(chatId, text, room, buttonText = '🎮 Открыть партию') {
       const msg = await bot.api.sendMessage(chatId, text, { reply_markup: openButton(buttonText, room) });
       return msg.message_id;

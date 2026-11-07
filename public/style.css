@@ -68,6 +68,22 @@ body { min-height: 100vh; overscroll-behavior: none; -webkit-user-select: none; 
 .hero { display: flex; align-items: center; gap: 14px; margin: 8px 0 20px; }
 .logo { width: 56px; height: 56px; border-radius: 14px; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
 h1 { margin: 0; font-size: 26px; letter-spacing: -.3px; }
+.join { display: flex; gap: 8px; margin-top: 10px; }
+.join input {
+  flex: 1; min-width: 0;
+  padding: 12px 14px; border: 0; border-radius: 12px;
+  background: var(--bg2); color: var(--text);
+  font: inherit; font-size: 16px; outline: none;
+  -webkit-user-select: text; user-select: text;
+}
+.join input::placeholder { color: var(--hint); }
+.join input:focus { box-shadow: inset 0 0 0 2px var(--accent); }
+.code-chip {
+  align-self: center;
+  border: 0; border-radius: 99px; padding: 6px 14px;
+  background: var(--bg2); color: var(--text); font: inherit; cursor: pointer;
+}
+.code-chip b { letter-spacing: 1px; font-family: ui-monospace, Menlo, Consolas, monospace; }
 .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--hint); margin: 24px 4px 8px; font-weight: 600; }
 
 .list { display: flex; flex-direction: column; gap: 8px; }
@@ -125,6 +141,12 @@ h1 { margin: 0; font-size: 26px; letter-spacing: -.3px; }
 .status.mine { color: var(--accent); }
 .status.win { color: var(--good); }
 .status.loss { color: var(--danger); }
+.timer {
+  display: inline-block; margin-left: 8px; padding: 1px 9px; border-radius: 99px;
+  background: var(--bg2); color: var(--text);
+  font-size: 15px; font-variant-numeric: tabular-nums; vertical-align: 1px;
+}
+.timer.low { background: var(--danger); color: #fff; }
 
 .banner {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -198,6 +220,7 @@ h1 { margin: 0; font-size: 26px; letter-spacing: -.3px; }
 }
 .sheet-card h3 { margin: 0 0 6px; font-size: 19px; }
 .field { margin-bottom: 8px; }
+.sheet-note { font-size: 13px; margin: -4px 2px 6px; }
 .label { font-size: 13px; color: var(--hint); margin: 0 0 6px 2px; }
 .seg { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--bg2); }
 .seg button {

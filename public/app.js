@@ -18,9 +18,12 @@ const S = {
   game: null,
   games: null,
   sel: null,          // выбранная, но ещё не подтверждённая точка
+  selAt: 0,           // когда её выбрали — для двойного касания
+  deadline: null,     // локальное время, когда у текущего игрока кончится ход
+  warnedFor: null,
   startHandled: false,
   askedWrite: false,
-  opts: { rule: 'free', first: 'me' },
+  opts: { time: '30' },
 };
 
 // ───────────────────────── Telegram ─────────────────────────
@@ -54,8 +57,24 @@ function toast(text) {
 
 /** Комната из ссылки: ?room=… (кнопка бота) или startapp=… (прямая ссылка на Mini App). */
 function startRoom() {
-  const q = new URLSearchParams(location.search).get('room');
-  return q || (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || null;
+  const q = new URLSearchParams(location.search);
+  return q.get('room') || q.get('tgWebAppStartParam') ||
+    (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || null;
+}
+
+/** Достаёт код партии из того, что вставили: сам код или любая ссылка-приглашение. */
+function parseCode(text) {
+  const s = String(text || '').trim();
+  const m = s.match(/(?:startapp=|start=|room=)([a-z0-9]+)/i);
+  const code = (m ? m[1] : s).toLowerCase();
+  return /^[a-z0-9]{4,12}$/.test(code) ? code : null;
+}
+
+function joinByCode() {
+  const input = $('#code-input');
+  const code = parseCode(input.value);
+  if (!code) { toast('Вставь код или ссылку-приглашение'); haptic('notify', 'error'); return; }
+  if (send({ t: 'open', id: code })) input.value = '';
 }
 
 function setUrlRoom(id) {
@@ -208,12 +227,12 @@ function renderHome() {
   box.innerHTML = S.games.map((g) => {
     const [label, cls] = badge(g);
     const title = g.opponent ? esc(g.opponent) : 'Ждём соперника';
-    const rule = g.rule === 'exact' ? 'ровно 5' : '5+';
+    const time = g.turnTime ? `${g.turnTime} с на ход` : 'без времени';
     return `<button class="item" data-id="${esc(g.id)}">
       <span class="stone ${g.you === 0 ? 'black' : 'white'}"></span>
       <span class="item-main">
         <span class="item-title">${title}</span>
-        <span class="item-sub">${rule} · ходов: ${g.moves} · ${ago(g.updatedAt)}</span>
+        <span class="item-sub">${time} · ходов: ${g.moves} · ${ago(g.updatedAt)}</span>
       </span>
       <span class="badge ${cls}">${label}</span>
     </button>`;
@@ -242,6 +261,7 @@ function onGame(g) {
     setUrlRoom(g.id);
   }
   S.game = g;
+  S.deadline = g.timeLeft != null ? Date.now() + g.timeLeft : null;
   if (S.sel && (!canMove(g) || occupied(g, S.sel.x, S.sel.y))) S.sel = null;
   if (S.screen !== 'game') showScreen('game');
   if (g.you != null && g.status !== 'finished') requestWriteAccess();
@@ -260,8 +280,12 @@ function statusInfo(g) {
     const p = g.players[g.winner];
     return [`Победа: ${p ? p.name : ''} (${g.winner === 0 ? 'чёрные' : 'белые'})`, ''];
   }
-  if (g.winner === you) return [g.endReason === 'resign' ? 'Соперник сдался — победа! 🎉' : 'Пять в ряд — победа! 🎉', 'win'];
-  return [g.endReason === 'resign' ? 'Партия сдана' : 'Соперник собрал пять в ряд', 'loss'];
+  const won = {
+    resign: 'Соперник сдался — победа! 🎉',
+    timeout: 'У соперника вышло время — победа! 🎉',
+  }[g.endReason] || 'Пять в ряд — победа! 🎉';
+  const lost = { resign: 'Партия сдана', timeout: 'Время на ход вышло' }[g.endReason] || 'Соперник собрал пять в ряд';
+  return g.winner === you ? [won, 'win'] : [lost, 'loss'];
 }
 
 function renderGame(prev) {
@@ -279,13 +303,37 @@ function renderGame(prev) {
 
   const [text, cls] = statusInfo(g);
   const st = $('#status');
-  st.textContent = text;
+  st.innerHTML = esc(text) + '<span id="timer" class="timer hidden"></span>';
   st.className = 'status ' + cls;
+  renderTimer();
 
   $('#waiting').classList.toggle('hidden', g.status !== 'waiting' || g.you == null);
+  $('#invite-code').textContent = g.id;
   renderBoard(prev);
   renderBanner();
   renderActions();
+}
+
+/** Секунды, оставшиеся на текущий ход, или null, если время не ограничено. */
+function secondsLeft(g = S.game) {
+  if (!g || g.status !== 'playing' || !g.turnTime) return null;
+  // До первого хода часы стоят, пока оба игрока не в партии
+  const ms = S.deadline != null ? Math.max(0, S.deadline - Date.now()) : g.turnTime * 1000;
+  return Math.ceil(ms / 1000);
+}
+
+function renderTimer() {
+  const el = $('#timer');
+  if (!el) return;
+  const sec = secondsLeft();
+  el.classList.toggle('hidden', sec == null);
+  if (sec == null) return;
+  el.textContent = `⏱ ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  el.classList.toggle('low', S.deadline != null && sec <= 10);
+  if (canMove() && S.deadline != null && sec <= 10 && S.warnedFor !== S.deadline) {
+    S.warnedFor = S.deadline;
+    haptic('notify', 'warning');
+  }
 }
 
 function initBoard() {
@@ -348,11 +396,19 @@ function onBoardClick(e) {
     return;
   }
   const r = e.currentTarget.getBoundingClientRect();
-  const x = Math.round(((e.clientX - r.left) / r.width) * VB - PAD);
-  const y = Math.round(((e.clientY - r.top) / r.height) * VB - PAD);
+  const fx = ((e.clientX - r.left) / r.width) * VB - PAD;
+  const fy = ((e.clientY - r.top) / r.height) * VB - PAD;
+  const x = Math.round(fx);
+  const y = Math.round(fy);
+  if (S.sel) {
+    // Повторное касание выбранной точки ставит камень. При быстром двойном касании
+    // палец может чуть съехать на соседнюю клетку — это тоже считаем подтверждением.
+    const quick = performance.now() - S.selAt < 450 && Math.hypot(fx - S.sel.x, fy - S.sel.y) < 1.1;
+    if (quick || (S.sel.x === x && S.sel.y === y)) { place(); return; }
+  }
   if (x < 0 || y < 0 || x >= SIZE || y >= SIZE || occupied(g, x, y)) return;
-  if (S.sel && S.sel.x === x && S.sel.y === y) { place(); return; }
   S.sel = { x, y };
+  S.selAt = performance.now();
   haptic('select');
   renderBoard();
   renderActions();
@@ -368,6 +424,7 @@ function place() {
   const prev = { ...g, moves: g.moves.slice() };
   S.sel = null;
   S.game = { ...g, moves: [...g.moves, [x, y]], undoRequest: null };
+  S.deadline = g.turnTime ? Date.now() + g.turnTime * 1000 : null; // часы перешли к сопернику
   renderGame(prev);
 }
 
@@ -420,6 +477,7 @@ async function onAction(act) {
     case 'home': goHome(); break;
     case 'share': share(g.invite); break;
     case 'copy': copy(g.invite); break;
+    case 'copy-code': copy(g.id, 'Код скопирован'); break;
     case 'cancel': if (await ask('Отменить партию?')) send({ t: 'cancel', id: g.id }); break;
   }
 }
@@ -438,10 +496,10 @@ function share(link) {
   }
 }
 
-async function copy(text) {
+async function copy(text, done = 'Ссылка скопирована') {
   try {
     await navigator.clipboard.writeText(text);
-    toast('Ссылка скопирована');
+    toast(done);
   } catch {
     window.prompt('Скопируй ссылку:', text);
   }
@@ -480,7 +538,7 @@ function init() {
   $('#btn-sheet-close').addEventListener('click', closeSheet);
   $('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet') closeSheet(); });
   $('#btn-create').addEventListener('click', () => {
-    if (send({ t: 'create', rule: S.opts.rule, first: S.opts.first })) closeSheet();
+    if (send({ t: 'create', time: Number(S.opts.time) })) closeSheet();
   });
   document.querySelectorAll('.seg').forEach((seg) => {
     seg.addEventListener('click', (e) => {
@@ -497,6 +555,8 @@ function init() {
     if (item) send({ t: 'open', id: item.dataset.id });
   });
   $('#btn-back').addEventListener('click', goHome);
+  $('#btn-join').addEventListener('click', joinByCode);
+  $('#code-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinByCode(); });
   for (const sel of ['#actions', '#banner', '#waiting']) {
     $(sel).addEventListener('click', (e) => {
       const b = e.target.closest('button[data-act]');
@@ -507,6 +567,7 @@ function init() {
     if (!document.hidden && S.screen === 'home' && S.ready) send({ t: 'list' });
   });
   setInterval(() => { if (S.screen === 'home' && S.games) renderHome(); }, 60_000); // «N мин назад»
+  setInterval(() => { if (S.screen === 'game') renderTimer(); }, 250);
 
   showScreen('home');
   renderHome();

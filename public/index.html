@@ -23,6 +23,12 @@
 
       <button id="btn-new" class="btn primary big">Новая партия</button>
 
+      <div class="join">
+        <input id="code-input" type="text" inputmode="text" autocomplete="off" autocapitalize="off"
+               spellcheck="false" placeholder="Код или ссылка от друга">
+        <button id="btn-join" class="btn">Войти</button>
+      </div>
+
       <h2 class="section-title">Мои партии</h2>
       <div id="games" class="list"></div>
 
@@ -31,9 +37,9 @@
         <ul>
           <li>Доска 15×15, чёрные ходят первыми.</li>
           <li>Игроки по очереди ставят камни на пересечения линий.</li>
-          <li>Побеждает тот, кто первым выстроит <b>5 камней в ряд</b> по горизонтали, вертикали или диагонали.</li>
-          <li>В режиме «Ровно 5» ряд из 6 и более камней не считается.</li>
-          <li>Ход ставится в два касания: выбери точку, затем нажми её ещё раз или «Поставить».</li>
+          <li>Побеждает тот, кто первым выстроит <b>5 и больше камней в ряд</b> по горизонтали, вертикали или диагонали.</li>
+          <li>Цвет определяется жребием. Если на ход есть ограничение по времени и оно вышло — партия проиграна.</li>
+          <li>Чтобы поставить камень, коснись точки дважды или выбери её и нажми «Поставить».</li>
           <li>Можно попросить соперника вернуть ход. Если соперника нет в игре, бот пришлёт ему уведомление.</li>
         </ul>
       </details>
@@ -67,6 +73,7 @@
           <div class="overlay-card">
             <div class="overlay-title">Ждём соперника</div>
             <p class="hint">Отправь приглашение — партия начнётся, как только соперник откроет ссылку.</p>
+            <button class="code-chip" data-act="copy-code">Код партии: <b id="invite-code"></b></button>
             <button class="btn primary big" data-act="share">Пригласить</button>
             <button class="btn big" data-act="copy">Скопировать ссылку</button>
             <button class="btn ghost danger big" data-act="cancel">Отменить партию</button>
@@ -91,20 +98,14 @@
     <div class="sheet-card">
       <h3>Новая партия</h3>
       <div class="field">
-        <div class="label">Победа</div>
-        <div class="seg" data-key="rule">
-          <button data-v="free" class="on">5 и больше</button>
-          <button data-v="exact">Ровно 5</button>
+        <div class="label">Время на ход</div>
+        <div class="seg" data-key="time">
+          <button data-v="30" class="on">30 секунд</button>
+          <button data-v="60">60 секунд</button>
+          <button data-v="0">Без времени</button>
         </div>
       </div>
-      <div class="field">
-        <div class="label">Первый ход (чёрные)</div>
-        <div class="seg" data-key="first">
-          <button data-v="me" class="on">Я</button>
-          <button data-v="them">Соперник</button>
-          <button data-v="random">Случайно</button>
-        </div>
-      </div>
+      <p class="hint sheet-note">Кто играет чёрными и ходит первым, решит жребий.</p>
       <button id="btn-create" class="btn primary big">Создать</button>
       <button id="btn-sheet-close" class="btn ghost big">Отмена</button>
     </div>
